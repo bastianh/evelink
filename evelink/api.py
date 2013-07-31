@@ -237,7 +237,9 @@ class API(object):
         if not cached and expires_time:
             # Have to split this up from above as timestamps have to be
             # extracted.
-            self.cache.put(key, response, expires_time - current_time)
+            duration = expires_time - current_time
+            if duration > 0:
+                self.cache.put(key, response, duration)
 
         error = tree.find('error')
         if error is not None:

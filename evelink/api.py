@@ -288,6 +288,8 @@ class API(object):
                 # GET request
                 _log.debug("GETting request")
                 r = session.get(full_path)
+            if r.status_code < 200 or r.status_code > 299:
+                raise Exception("Unexcpected status code %r",r.status_code)
             return r.content
         except requests.exceptions.RequestException as e:
             # TODO: Handle this better?

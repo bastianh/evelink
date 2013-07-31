@@ -10,6 +10,8 @@ from xml.etree import ElementTree
 
 _log = logging.getLogger('evelink.api')
 
+_defaultcache = None
+
 try:
     import requests
     _has_requests = True
@@ -24,6 +26,9 @@ def _clean(v):
     else:
         return str(v)
 
+def set_defaultcache(cache):
+    global _defaultcache
+    _defaultcache = cache
 
 def parse_ts(v):
     """Parse a timestamp from EVE API XML into a unix-ish timestamp."""
@@ -173,7 +178,7 @@ class API(object):
     def __init__(self, base_url="api.eveonline.com", cache=None, api_key=None):
         self.base_url = base_url
 
-        cache = cache or APICache()
+        cache = cache or _defaultcache or APICache()
         if not isinstance(cache, APICache):
             raise ValueError("The provided cache must subclass from APICache.")
         self.cache = cache

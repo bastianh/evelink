@@ -234,7 +234,7 @@ class API(object):
         expires_time = get_ts_value(tree, 'cachedUntil')
         self._set_last_timestamps(current_time, expires_time)
 
-        if not cached:
+        if not cached and expires_time:
             # Have to split this up from above as timestamps have to be
             # extracted.
             self.cache.put(key, response, expires_time - current_time)

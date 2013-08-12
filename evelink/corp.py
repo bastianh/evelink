@@ -166,7 +166,7 @@ class Corp(object):
 
         return results
 
-    def wallet_journal(self, before_id=None, limit=None):
+    def wallet_journal(self, before_id=None, limit=None, accountKey=None):
         """Returns wallet journal for a corporation."""
 
         params = {}
@@ -174,6 +174,8 @@ class Corp(object):
             params['fromID'] = before_id
         if limit is not None:
             params['rowCount'] = limit
+        if accountKey is not None:
+            params['accountKey'] = accountKey
         api_result = self.api.get('corp/WalletJournal', params)
 
         return parse_wallet_journal(api_result)

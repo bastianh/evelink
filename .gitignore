@@ -1,5 +1,9 @@
 dist
+build
 venv
 MANIFEST
+.coverage
 *.py[co]
 .*.swp
+google_appengine_*.zip
+vendors/*

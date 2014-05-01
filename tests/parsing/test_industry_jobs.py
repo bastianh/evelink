@@ -7,14 +7,17 @@ from tests.utils import make_api_result
 class IndustryJobsTestCase(unittest.TestCase):
 
     def test_parse_industry_jobs(self):
-        api_result = make_api_result("char/industry_jobs.xml")
+        api_result, _, _ = make_api_result("char/industry_jobs.xml")
         result = evelink_ij.parse_industry_jobs(api_result)
-        self.assertEqual(result, { 
+        self.assertEqual(result, {
             19962573: {
-                'activity_id': 4,                                                                                                 'begin_ts': 1205793300,
+                'activity_id': 4,
+                'begin_ts': 1205793300,
                 'delivered': False,
-                'status': 'failed',
+                'completed': False,
+                'status': 'in-progress',
                 'finished': False,
+                'successful': False,
                 'container_id': 61000139,
                 'container_type_id': 21644,
                 'end_ts': 1208073300,
@@ -44,13 +47,15 @@ class IndustryJobsTestCase(unittest.TestCase):
                     'location_id': 61000139,
                     'type_id': 27309},
                 'runs': 20,
-                'pause_ts': None}, 
+                'pause_ts': None},
             37051255: {
                 'activity_id': 1,
                 'begin_ts': 1233500820,
-                'delivered': False,
+                'delivered': True,
+                'completed': True,
                 'status': 'failed',
                 'finished': False,
+                'successful': False,
                 'container_id': 61000211,
                 'container_type_id': 21644,
                 'end_ts': 1233511140,

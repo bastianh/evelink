@@ -14,7 +14,7 @@ class EVETestCase(APITestCase):
     def test_certificate_tree(self):
         self.api.get.return_value = self.make_api_result("eve/certificate_tree.xml")
 
-        result = self.eve.certificate_tree()
+        result, current, expires = self.eve.certificate_tree()
 
         self.assertEqual(result, {
             'Core': {
@@ -44,51 +44,133 @@ class EVETestCase(APITestCase):
                 'id': 3,
                 'name': 'Core'}})
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/CertificateTree'),
+                mock.call.get('eve/CertificateTree', params={}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_character_names_from_ids(self):
         self.api.get.return_value = self.make_api_result("eve/character_name.xml")
 
-        result = self.eve.character_names_from_ids([1,2])
+        result, current, expires = self.eve.character_names_from_ids(set([1,2]))
 
         self.assertEqual(result, {1:"EVE System", 2:"EVE Central Bank"})
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/CharacterName', {'IDs': set([1,2])}),
+                mock.call.get('eve/CharacterName', params={'IDs': set([1,2])}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_character_name_from_id(self):
         self.api.get.return_value = self.make_api_result("eve/character_name_single.xml")
 
-        result = self.eve.character_name_from_id(1)
+        result, current, expires = self.eve.character_name_from_id(1)
 
         self.assertEqual(result, "EVE System")
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/CharacterName', {'IDs': set([1])}),
+                mock.call.get('eve/CharacterName', params={'IDs': [1]}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_character_ids_from_names(self):
         self.api.get.return_value = self.make_api_result("eve/character_id.xml")
 
-        result = self.eve.character_ids_from_names(["EVE System", "EVE Central Bank"])
+        result, current, expires = self.eve.character_ids_from_names(set(["EVE System", "EVE Central Bank"]))
         self.assertEqual(result, {"EVE System":1, "EVE Central Bank":2})
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/CharacterID', {'names': set(["EVE System","EVE Central Bank"])}),
+                mock.call.get('eve/CharacterID', params={'names': set(["EVE System","EVE Central Bank"])}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_character_id_from_name(self):
         self.api.get.return_value = self.make_api_result("eve/character_id_single.xml")
 
-        result = self.eve.character_id_from_name("EVE System")
+        result, current, expires = self.eve.character_id_from_name("EVE System")
         self.assertEqual(result, 1)
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/CharacterID', {'names': set(["EVE System"])}),
+                mock.call.get('eve/CharacterID', params={'names': ["EVE System"]}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
+
+    def test_affiliations_for_characters(self):
+        self.api.get.return_value = self.make_api_result("eve/character_affiliation.xml")
+
+        result, current, expires = self.eve.affiliations_for_characters(set([92168909, 401111892, 1979087900]))
+        self.assertEqual(result, {
+            1979087900: {
+                'id': 1979087900,
+                'name': 'Marcel Devereux',
+                'faction': {
+                    'id': 500004,
+                    'name': 'Gallente Federation'
+                },
+                'corp': {
+                    'id': 1894214152,
+                    'name': 'Aideron Robotics'
+                }
+            },
+            401111892: {
+                'id': 401111892,
+                'name': 'ShadowMaster',
+                'alliance': {
+                    'id': 99000652,
+                    'name': 'RvB - BLUE Republic'
+                },
+                'corp': {
+                    'id': 1741770561,
+                    'name': 'Blue Republic'
+                }
+            },
+            92168909: {
+                'id': 92168909,
+                'name': 'CCP FoxFour',
+                'alliance': {
+                    'id': 434243723,
+                    'name': 'C C P Alliance'
+                },
+                'corp': {
+                    'id': 109299958,
+                    'name': 'C C P'
+                }
+            }
+        })
+
+        self.assertEqual(self.api.mock_calls, [
+            mock.call.get('eve/CharacterAffiliation', params={'ids': set([92168909, 401111892, 1979087900])})
+        ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
+
+    def test_affiliations_for_character(self):
+        self.api.get.return_value = self.make_api_result("eve/character_affiliation_single.xml")
+
+        result, current, expires = self.eve.affiliations_for_character(92168909)
+        self.assertEqual(result, {
+            'id': 92168909,
+            'name': 'CCP FoxFour',
+            'alliance': {
+                'id': 434243723,
+                'name': 'C C P Alliance'
+            },
+            'corp': {
+                'id': 109299958,
+                'name': 'C C P'
+            }
+        })
+
+        self.assertEqual(self.api.mock_calls, [
+            mock.call.get('eve/CharacterAffiliation', params={'ids': [92168909]})
+        ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_character_info_from_id(self):
         self.api.get.return_value = self.make_api_result("eve/character_info.xml")
 
-        result = self.eve.character_info_from_id(1234)
+        result, current, expires = self.eve.character_info_from_id(1234)
         self.assertEqual(result, {
             'alliance': {'id': None, 'name': None, 'timestamp': None},
             'bloodline': 'Civire',
@@ -107,13 +189,15 @@ class EVETestCase(APITestCase):
             'skillpoints': None,
         })
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/CharacterInfo', {'characterID': 1234}),
+                mock.call.get('eve/CharacterInfo', params={'characterID': 1234}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_alliances(self):
         self.api.get.return_value = self.make_api_result("eve/alliances.xml")
 
-        result = self.eve.alliances()
+        result, current, expires = self.eve.alliances()
         self.assertEqual(result, {
                 1: {
                     'executor_id': 2,
@@ -130,22 +214,26 @@ class EVETestCase(APITestCase):
                 }
             })
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/AllianceList'),
+                mock.call.get('eve/AllianceList', params={}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_errors(self):
         self.api.get.return_value = self.make_api_result("eve/errors.xml")
 
-        result = self.eve.errors()
+        result, current, expires = self.eve.errors()
         self.assertEqual(result, {1:"Foo", 2:"Bar"})
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/ErrorList'),
+                mock.call.get('eve/ErrorList', params={}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_faction_warfare_stats(self):
         self.api.get.return_value = self.make_api_result("eve/faction_warfare_stats.xml")
 
-        result = self.eve.faction_warfare_stats()
+        result, current, expires = self.eve.faction_warfare_stats()
         self.assertEqual(result, {
             'kills': {'total': 232772, 'week': 3246, 'yesterday': 677},
             'points': {'total': 44045189, 'week': 414049, 'yesterday': 55087},
@@ -219,13 +307,15 @@ class EVETestCase(APITestCase):
                 ],
             })
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/FacWarStats'),
+                mock.call.get('eve/FacWarStats', params={}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_faction_warfare_leaderboard(self):
         self.api.get.return_value = self.make_api_result("eve/faction_warfare_leaderboard.xml")
 
-        result = self.eve.faction_warfare_leaderboard()
+        result, current, expires = self.eve.faction_warfare_leaderboard()
         self.assertEqual(result, {
                 'char': {
                     'kills': {
@@ -271,13 +361,15 @@ class EVETestCase(APITestCase):
                 },
             })
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/FacWarTopStats'),
+                mock.call.get('eve/FacWarTopStats', params={}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_conquerable_stations(self):
         self.api.get.return_value = self.make_api_result("eve/conquerable_stations.xml")
 
-        result = self.eve.conquerable_stations()
+        result, current, expires = self.eve.conquerable_stations()
         self.assertEqual(result, {
             1:{ 'id':1,
                 'name':"Station station station",
@@ -297,13 +389,15 @@ class EVETestCase(APITestCase):
                 }
            })
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/ConquerableStationlist'),
+                mock.call.get('eve/ConquerableStationlist', params={}),
             ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
     def test_skill_tree(self):
         self.api.get.return_value = self.make_api_result("eve/skill_tree.xml")
 
-        result = self.eve.skill_tree()
+        result, current, expires = self.eve.skill_tree()
 
         self.assertEqual(result, {
                 255: {
@@ -379,7 +473,6 @@ class EVETestCase(APITestCase):
                                     }
                                 }
                             },
-
                         3369 : {
                             'id': 3369,
                             'group_id': 266,
@@ -400,16 +493,18 @@ class EVETestCase(APITestCase):
                         }
                     }
                 })
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/SkillTree')
+                mock.call.get('eve/SkillTree', params={})
                 ])
 
 
     def test_reference_types(self):
         self.api.get.return_value = self.make_api_result("eve/reference_types.xml")
 
-        result = self.eve.reference_types()
+        result, current, expires = self.eve.reference_types()
 
         self.assertEqual(result, {
                 0: 'Undefined',
@@ -419,9 +514,11 @@ class EVETestCase(APITestCase):
                 4: 'ATM Withdraw',
                 5: 'ATM Deposit'
                 })
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
 
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('eve/RefTypes')
+                mock.call.get('eve/RefTypes', params={})
                 ])
 
 

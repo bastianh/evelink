@@ -10,25 +10,24 @@ class Account(object):
     def __init__(self, api):
         self.api = api
 
-    def status(self):
+    @api.auto_call('account/AccountStatus')
+    def status(self, api_result=None):
         """Returns the account's subscription status."""
-        api_result = self.api.get('account/AccountStatus')
+        _str, _int, _float, _bool, _ts = api.elem_getters(api_result.result)
 
-        _str, _int, _float, _bool, _ts = api.elem_getters(api_result)
-
-        return {
+        result = {
             'paid_ts': _ts('paidUntil'),
             'create_ts': _ts('createDate'),
             'logins': _int('logonCount'),
             'minutes_played': _int('logonMinutes'),
         }
 
-    def key_info(self):
+        return api.APIResult(result, api_result.timestamp, api_result.expires)
+
+    @api.auto_call('account/APIKeyInfo')
+    def key_info(self, api_result=None):
         """Returns the details of the API key being used to auth."""
-
-        api_result = self.api.get('account/APIKeyInfo')
-
-        key = api_result.find('key')
+        key = api_result.result.find('key')
         result = {
             'access_mask': int(key.attrib['accessMask']),
             'type': constants.APIKey.key_types[key.attrib['type']],
@@ -48,14 +47,12 @@ class Account(object):
             }
             result['characters'][character['id']] = character
 
-        return result
+        return api.APIResult(result, api_result.timestamp, api_result.expires)
 
-    def characters(self):
+    @api.auto_call('account/Characters')
+    def characters(self, api_result=None):
         """Returns all of the characters on an account."""
-
-        api_result = self.api.get('account/Characters')
-
-        rowset = api_result.find('rowset')
+        rowset = api_result.result.find('rowset')
         result = {}
         for row in rowset.findall('row'):
             character = {
@@ -68,4 +65,4 @@ class Account(object):
             }
             result[character['id']] = character
 
-        return result
+        return api.APIResult(result, api_result.timestamp, api_result.expires)

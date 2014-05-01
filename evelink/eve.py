@@ -7,12 +7,12 @@ class EVE(object):
     def __init__(self, api=None):
         self.api = api
 
-    def certificate_tree(self):
+    @api.auto_call('eve/CertificateTree')
+    def certificate_tree(self, api_result=None):
         """Returns a list of certificates in eve."""
-        api_result = self.api.get('eve/CertificateTree')
 
         result = {}
-        rowset = api_result.find('rowset')
+        rowset = api_result.result.find('rowset')
         categories = rowset.findall('row')
 
         for category in categories:
@@ -72,9 +72,10 @@ class EVE(object):
 
             result[cat_name] = cat_tree
 
-        return result
+        return api.APIResult(result, api_result.timestamp, api_result.expires)
 
-    def character_names_from_ids(self, id_list):
+    @api.auto_call('eve/CharacterName', map_params={'id_list': 'IDs'})
+    def character_names_from_ids(self, id_list, api_result=None):
         """Retrieve a dict mapping character IDs to names.
 
         id_list:
@@ -84,17 +85,13 @@ class EVE(object):
         must be valid - an invalid character ID will cause
         the entire call to fail.
         """
-
-        api_result = self.api.get('eve/CharacterName', {
-                'IDs': set(id_list),
-            })
-
+        
         if api_result is None:
             # The API doesn't actually tell us which character IDs are invalid
             msg = "One or more of these character IDs are invalid: %r"
             raise ValueError(msg % id_list)
 
-        rowset = api_result.find('rowset')
+        rowset = api_result.result.find('rowset')
         rows = rowset.findall('row')
 
         results = {}
@@ -103,16 +100,18 @@ class EVE(object):
             char_id = int(row.attrib['characterID'])
             results[char_id] = name
 
-        return results
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
 
     def character_name_from_id(self, char_id):
         """Retrieve the character's name based on ID.
 
         Convenience wrapper around character_names_from_ids().
         """
-        return self.character_names_from_ids([char_id]).get(char_id)
+        api_result = self.character_names_from_ids([char_id])
+        return api.APIResult(api_result.result.get(char_id), api_result.timestamp, api_result.expires)
 
-    def character_ids_from_names(self, name_list):
+    @api.auto_call('eve/CharacterID', map_params={'name_list': 'names'})
+    def character_ids_from_names(self, name_list, api_result=None):
         """Retrieve a dict mapping character names to IDs.
 
         name_list:
@@ -121,11 +120,7 @@ class EVE(object):
         Names of unknown characters will map to None.
         """
 
-        api_result = self.api.get('eve/CharacterID', {
-                'names': set(name_list),
-            })
-
-        rowset = api_result.find('rowset')
+        rowset = api_result.result.find('rowset')
         rows = rowset.findall('row')
 
         results = {}
@@ -134,26 +129,23 @@ class EVE(object):
             char_id = int(row.attrib['characterID']) or None
             results[name] = char_id
 
-        return results
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
 
     def character_id_from_name(self, name):
         """Retrieve the named character's ID.
 
         Convenience wrapper around character_ids_from_names().
         """
-        return self.character_ids_from_names([name]).get(name)
+        api_result = self.character_ids_from_names([name])
+        return api.APIResult(api_result.result.get(name), api_result.timestamp, api_result.expires)
 
-    def character_info_from_id(self, char_id):
+    @api.auto_call('eve/CharacterInfo', map_params={'char_id': 'characterID'})
+    def character_info_from_id(self, char_id, api_result=None):
         """Retrieve a dict of info about the designated character."""
-
-        api_result = self.api.get('eve/CharacterInfo', {
-                'characterID': char_id,
-            })
-
         if api_result is None:
             raise ValueError("Unable to fetch info for character %r" % char_id)
 
-        _str, _int, _float, _bool, _ts = api.elem_getters(api_result)
+        _str, _int, _float, _bool, _ts = api.elem_getters(api_result.result)
 
         results = {
             'id': _int('characterID'),
@@ -187,7 +179,7 @@ class EVE(object):
         }
 
         # Add in corp history
-        history = api_result.find('rowset')
+        history = api_result.result.find('rowset')
         for row in history.findall('row'):
             corp_id = int(row.attrib['corporationID'])
             start_date = api.parse_ts(row.attrib['startDate'])
@@ -196,15 +188,13 @@ class EVE(object):
                     'start_ts': start_date,
                 })
 
-        return results
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
 
-    def alliances(self):
+    @api.auto_call('eve/AllianceList')
+    def alliances(self, api_result=None):
         """Return a dict of all alliances in EVE."""
-
-        api_result = self.api.get('eve/AllianceList')
-
         results = {}
-        rowset = api_result.find('rowset')
+        rowset = api_result.result.find('rowset')
         for row in rowset.findall('row'):
             alliance = {
                 'name': row.attrib['name'],
@@ -227,29 +217,25 @@ class EVE(object):
 
             results[alliance['id']] = alliance
 
-        return results
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
 
-    def errors(self):
+    @api.auto_call('eve/ErrorList')
+    def errors(self, api_result=None):
         """Return a mapping of error codes to messages."""
-
-        api_result = self.api.get('eve/ErrorList')
-
-        rowset = api_result.find('rowset')
+        rowset = api_result.result.find('rowset')
         results = {}
         for row in rowset.findall('row'):
             code = int(row.attrib['errorCode'])
             message = row.attrib['errorText']
             results[code] = message
 
-        return results
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
 
-    def faction_warfare_stats(self):
+    @api.auto_call('eve/FacWarStats')
+    def faction_warfare_stats(self, api_result=None):
         """Return various statistics from Faction Warfare."""
-
-        api_result = self.api.get('eve/FacWarStats')
-
-        totals = api_result.find('totals')
-        rowsets = dict((r.attrib['name'], r) for r in api_result.findall('rowset'))
+        totals = api_result.result.find('totals')
+        rowsets = dict((r.attrib['name'], r) for r in api_result.result.findall('rowset'))
 
         _str, _int, _float, _bool, _ts = api.elem_getters(totals)
         results = {
@@ -301,14 +287,12 @@ class EVE(object):
             }
             results['wars'].append(war)
 
-        return results
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
 
-    def skill_tree(self):
+    @api.auto_call('eve/SkillTree')
+    def skill_tree(self, api_result=None):
         """Return a dict of all available skill groups."""
-
-        api_result = self.api.get('eve/SkillTree')
-
-        rowset = api_result.find('rowset') # skillGroups
+        rowset = api_result.result.find('rowset') # skillGroups
 
         results = {}
         name_cache = {}
@@ -377,31 +361,29 @@ class EVE(object):
             results[group['id']] = group
 
         # Second pass to fill in required skill names
-        for group in results.itervalues():
-            for skill in group['skills'].itervalues():
-                for skill_id, skill_info in skill['required_skills'].iteritems():
+        for group in results.values():
+            for skill in group['skills'].values():
+                for skill_id, skill_info in skill['required_skills'].items():
                     skill_info['name'] = name_cache.get(skill_id)
 
-        return results
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
 
 
-    def reference_types(self):
+    @api.auto_call('eve/RefTypes')
+    def reference_types(self, api_result=None):
         """Return a dict containing id -> name reference type mappings."""
-
-        api_result = self.api.get('eve/RefTypes')
-        rowset = api_result.find('rowset')
+        rowset = api_result.result.find('rowset')
 
         results = {}
         for row in rowset.findall('row'):
             a = row.attrib
             results[int(a['refTypeID'])] = a['refTypeName']
 
-        return results
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
 
-    def faction_warfare_leaderboard(self):
+    @api.auto_call('eve/FacWarTopStats')
+    def faction_warfare_leaderboard(self, api_result=None):
         """Return top-100 lists from Faction Warfare."""
-
-        api_result = self.api.get('eve/FacWarTopStats')
 
         def parse_top_100(rowset, prefix, attr, attr_name):
             top100 = []
@@ -438,19 +420,17 @@ class EVE(object):
             return section_result
 
         results = {
-            'char': parse_section(api_result.find('characters'), 'character'),
-            'corp': parse_section(api_result.find('corporations'), 'corporation'),
-            'faction': parse_section(api_result.find('factions'), 'faction'),
+            'char': parse_section(api_result.result.find('characters'), 'character'),
+            'corp': parse_section(api_result.result.find('corporations'), 'corporation'),
+            'faction': parse_section(api_result.result.find('factions'), 'faction'),
         }
 
-        return results
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
 
-    def conquerable_stations(self):
-
-        api_result = self.api.get('eve/ConquerableStationlist')
-
+    @api.auto_call('eve/ConquerableStationlist')
+    def conquerable_stations(self, api_result=None):
         results = {}
-        rowset = api_result.find('rowset')
+        rowset = api_result.result.find('rowset')
         for row in rowset.findall('row'):
             station = {
                 'id': int(row.attrib['stationID']),
@@ -463,4 +443,8 @@ class EVE(object):
                 }
             results[station['id']] = station
 
-        return results
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
+
+
+
+# vim: set ts=4 sts=4 sw=4 et:

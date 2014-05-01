@@ -1,11 +1,21 @@
-from cStringIO import StringIO
+import hashlib
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from io import StringIO, BytesIO
 import calendar
+import collections
 import functools
+import gzip
+import inspect
 import logging
 import re
 import time
-from urllib import urlencode
-import urllib2
+try:
+    from urllib import urlencode
+except ImportError:
+    from urllib.parse import urlencode
+
 from xml.etree import ElementTree
 
 _log = logging.getLogger('evelink.api')
@@ -29,6 +39,17 @@ def _clean(v):
 def set_defaultcache(cache):
     global _defaultcache
     _defaultcache = cache
+
+def decompress(s):
+    """Decode a gzip compressed string."""
+    buf = StringIO(s)
+    f = gzip.GzipFile(fileobj=buf)
+    try:
+        return f.read()
+    finally:
+        f.close()
+        buf.close()
+
 
 def parse_ts(v):
     """Parse a timestamp from EVE API XML into a unix-ish timestamp."""
@@ -122,12 +143,15 @@ def parse_ms_date(date_string):
 class APIError(Exception):
     """Exception raised when the EVE API returns an error."""
 
-    def __init__(self, code=None, message=None):
+    def __init__(self, code=None, message=None, timestamp=None, expires=None):
         self.code = code
         self.message = message
+        self.timestamp = timestamp
+        self.expires = expires
 
     def __repr__(self):
-        return "APIError(%r, %r)" % (self.code, self.message)
+        return "APIError(%r, %r, timestamp=%r, expires=%r)" % (
+            self.code, self.message, self.timestamp, self.expires)
 
     def __str__(self):
         return "%s (code=%d)" % (self.message, int(self.code))
@@ -172,6 +196,13 @@ class APICache(object):
         self.cache[key] = (value, expiration)
 
 
+APIResult = collections.namedtuple("APIResult", [
+        "result",
+        "timestamp",
+        "expires",
+    ])
+
+
 class API(object):
     """A wrapper around the EVE API."""
 
@@ -196,9 +227,10 @@ class API(object):
         }
 
     def _cache_key(self, path, params):
-        sorted_params = sorted(params.iteritems())
+        sorted_params = sorted(params.items())
         # Paradoxically, Shelve doesn't like integer keys.
-        return '%s-%s' % (self.CACHE_VERSION, hash((path, tuple(sorted_params))))
+        key = str(tuple([self.CACHE_VERSION,path]+sorted_params)).encode("UTF-8")
+        return hashlib.md5(key).hexdigest()
 
     def get(self, path, params=None):
         """Request a specific path from the EVE API.
@@ -209,7 +241,7 @@ class API(object):
         """
 
         params = params or {}
-        params = dict((k, _clean(v)) for k,v in params.iteritems())
+        params = dict((k, _clean(v)) for k,v in params.items())
 
         _log.debug("Calling %s with params=%r", path, params)
         if self.api_key:
@@ -229,28 +261,26 @@ class API(object):
         else:
             _log.debug("Cache hit, returning cached payload")
 
-        tree = ElementTree.parse(StringIO(response))
+        tree = ElementTree.fromstring(response)
         current_time = get_ts_value(tree, 'currentTime')
         expires_time = get_ts_value(tree, 'cachedUntil')
         self._set_last_timestamps(current_time, expires_time)
 
-        if not cached and expires_time:
+        if not cached:
             # Have to split this up from above as timestamps have to be
             # extracted.
-            duration = expires_time - current_time
-            if duration > 0:
-                self.cache.put(key, response, duration)
+            self.cache.put(key, response, expires_time - current_time)
 
         error = tree.find('error')
         if error is not None:
             code = error.attrib['code']
             message = error.text.strip()
-            exc = APIError(code, message)
+            exc = APIError(code, message, current_time, expires_time)
             _log.error("Raising API error: %r" % exc)
             raise exc
 
         result = tree.find('result')
-        return result
+        return APIResult(result, current_time, expires_time)
 
     def send_request(self, full_path, params):
         if _has_requests:
@@ -263,17 +293,30 @@ class API(object):
             if params:
                 # POST request
                 _log.debug("POSTing request")
-                r = urllib2.urlopen(full_path, params)
+                req = urllib2.Request(full_path, data=params)
             else:
                 # GET request
+                req = urllib2.Request(full_path)
                 _log.debug("GETting request")
-                r = urllib2.urlopen(full_path)
-            result = r.read()
-            r.close()
-            return result
+
+            req.add_header('Accept-Encoding', 'gzip')
+            r = urllib2.urlopen(req)
+        except urllib2.HTTPError as r:
+            # urllib2 handles non-2xx responses by raising an exception that
+            # can also behave as a file-like object. The EVE API will return
+            # non-2xx HTTP codes on API errors (since Odyssey, apparently)
+            pass
         except urllib2.URLError as e:
             # TODO: Handle this better?
             raise e
+
+        try:
+            if r.info().get('Content-Encoding') == 'gzip':
+                return decompress(r.read())
+            else:
+                return r.read()
+        finally:
+            r.close()
 
     def requests_request(self, full_path, params):
         session = getattr(self, 'session', None)
@@ -290,12 +333,11 @@ class API(object):
                 # GET request
                 _log.debug("GETting request")
                 r = session.get(full_path)
-            if r.status_code < 200 or r.status_code > 299:
-                raise Exception("Unexcpected status code %r",r.status_code)
             return r.content
         except requests.exceptions.RequestException as e:
             # TODO: Handle this better?
             raise e
+
 
 def auto_api(func):
     """A decorator to automatically provide an API instance.
@@ -312,5 +354,128 @@ def auto_api(func):
         return func(*args, **kwargs)
     return wrapper
 
+
+def translate_args(args, mapping=None):
+    """Translate python name variable into API parameter name."""
+    mapping = mapping if mapping else {}
+    return dict((mapping[k], v,) for k, v in args.items())
+
+# TODO: needs better name
+def get_args_and_defaults(func):
+    """Return the list of argument names and a dict of default values"""
+    specs = inspect.getargspec(func)
+    return (
+        specs.args,
+        dict(zip(specs.args[-len(specs.defaults):], specs.defaults)),
+    )
+
+
+def map_func_args(args, kw, args_names, defaults):
+    """Associate positional (*args) and key (**kw) arguments values 
+    with their argument names.
+
+    'args_names' should be the list of argument names and 'default' 
+    should be a dict associating the keyword arguments to their 
+    defaults.
+
+    Similar to inspect.getcallargs() but compatible with python 2.6.
+
+    """
+    if (len(args)+len(kw)) > len(args_names):
+        raise TypeError('Too many arguments.')
+
+    map_ = dict(zip(args_names, args))
+    for k, v in kw.items():
+        if k in map_:
+            raise TypeError(
+                "got multiple values for keyword argument '%s'" % k
+            )
+        map_[k] = v
+
+    for k, v in defaults.items():
+        map_.setdefault(k, v)
+
+    required_args = args_names[0:-len(defaults)]
+    for k in required_args:
+        if k not in map_:
+            raise TypeError("Too few arguments")
+    return map_
+
+
+class auto_call(object):
+    """A decorator to automatically provide an api response to a method.
+
+    The object the method will be bound to should have an api attribute 
+    and the method should have a keyword argument named 'api_result'.
+
+    The decorated method will have a '_request_specs' dict attribute 
+    holding:
+
+    - 'path': path of the request needs to be queried.
+
+    - 'args': method argument names.
+
+    - 'defaults': method keyword arguments and theirs default value.
+
+    - 'prop_to_param': properties of the instance the method is bound 
+    to to add as parameter of api request.
+
+    - 'map_params': dictionary associating argument name to a 
+    paramater name. They will be added to 'evelink.api._args_map' to 
+    translate argument names to parameter names.
+
+    """
+    
+    def __init__(self, path, prop_to_param=tuple(), map_params=None):
+        self.method = None
+
+        self.path = path
+        self.args = None
+        self.defaults = None
+        self.prop_to_param = prop_to_param
+        self.map_params = map_params if map_params else {}
+
+    def __call__(self, method):
+        if self.method is not None:
+            raise TypeError("This decorator method cannot be shared.")
+        self.method = method
+        
+        wrapper = self._wrapped_method()
+        
+        args, self.defaults = get_args_and_defaults(self.method)
+
+        self.args = args[1:]
+        self.args.remove('api_result')
+        self.defaults.pop('api_result')  # TODO: better exception
+
+        wrapper._request_specs = {
+            'path': self.path,
+            'args': self.args,
+            'defaults': self.defaults,
+            'prop_to_param': self.prop_to_param,
+            'map_params': self.map_params
+        }
+
+        return wrapper
+
+    def _wrapped_method(self):
+        
+        @functools.wraps(self.method)
+        def wrapper(client, *args, **kw):
+            if 'api_result' in kw:
+                return self.method(client, *args, **kw)
+                
+            args_map = map_func_args(args, kw, self.args, self.defaults)
+            for attr_name in self.prop_to_param:
+                args_map[attr_name] = getattr(client, attr_name, None)
+
+            params = translate_args(args_map, self.map_params)
+            params =  dict((k, v,) for k, v in params.items() if v is not None)
+            
+            kw['api_result'] = client.api.get(self.path, params=params)
+            return self.method(client, *args, **kw)
+
+        return wrapper
+        
 
 # vim: set ts=4 sts=4 sw=4 et:

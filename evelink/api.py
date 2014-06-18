@@ -6,21 +6,23 @@ except ImportError:
 import calendar
 import collections
 import functools
-import gzip
+import zlib
 import inspect
 import logging
 import re
 import time
-try:
-    from urllib import urlencode
-except ImportError:
-    from urllib.parse import urlencode
-
 from xml.etree import ElementTree
+
+from evelink.thirdparty import six
+from evelink.thirdparty.six.moves import urllib
 
 _log = logging.getLogger('evelink.api')
 
 _defaultcache = None
+
+# Allows zlib.decompress to decompress gzip-compressed strings as well.
+# From zlib.h header file, not documented in Python.
+ZLIB_DECODE_AUTO = 32 + zlib.MAX_WBITS
 
 try:
     import requests
@@ -42,13 +44,7 @@ def set_defaultcache(cache):
 
 def decompress(s):
     """Decode a gzip compressed string."""
-    buf = StringIO(s)
-    f = gzip.GzipFile(fileobj=buf)
-    try:
-        return f.read()
-    finally:
-        f.close()
-        buf.close()
+    return zlib.decompress(s, ZLIB_DECODE_AUTO)
 
 
 def parse_ts(v):
@@ -255,7 +251,7 @@ class API(object):
 
         if not cached:
             # no cached response body found, call the API for one.
-            params = urlencode(params)
+            params = urllib.parse.urlencode(params)
             full_path = "https://%s/%s.xml.aspx" % (self.base_url, path)
             response = self.send_request(full_path, params)
         else:
@@ -289,24 +285,25 @@ class API(object):
             return self.urllib2_request(full_path, params)
 
     def urllib2_request(self, full_path, params):
+        r = None
         try:
             if params:
                 # POST request
                 _log.debug("POSTing request")
-                req = urllib2.Request(full_path, data=params)
+                req = urllib.request.Request(full_path, data=params.encode())
             else:
                 # GET request
-                req = urllib2.Request(full_path)
+                req = urllib.request.Request(full_path)
                 _log.debug("GETting request")
 
             req.add_header('Accept-Encoding', 'gzip')
-            r = urllib2.urlopen(req)
-        except urllib2.HTTPError as r:
+            r = urllib.request.urlopen(req)
+        except urllib.error.HTTPError as e:
             # urllib2 handles non-2xx responses by raising an exception that
             # can also behave as a file-like object. The EVE API will return
             # non-2xx HTTP codes on API errors (since Odyssey, apparently)
-            pass
-        except urllib2.URLError as e:
+            r = e
+        except urllib.error.URLError as e:
             # TODO: Handle this better?
             raise e
 

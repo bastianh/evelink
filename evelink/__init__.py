@@ -11,7 +11,7 @@ from evelink import eve
 from evelink import map
 from evelink import server
 
-__version__ = "0.4.0"
+__version__ = "0.5.0"
 
 # Implement NullHandler because it was only added in Python 2.7+.
 class NullHandler(logging.Handler):
@@ -21,6 +21,9 @@ class NullHandler(logging.Handler):
 # Create a logger, but by default, have it do nothing
 _log = logging.getLogger('evelink')
 _log.addHandler(NullHandler())
+
+# Update the version number used in the user-agent
+api._user_agent = 'evelink v%s' % __version__
 
 __all__ = [
   "account",

@@ -14,8 +14,6 @@ from evelink.thirdparty.six.moves import urllib
 
 _log = logging.getLogger('evelink.api')
 
-_defaultcache = None
-
 # Python 2.6's ElementTree raises xml.parsers.expat.ExpatError instead
 # of ElementTree.ParseError
 _xml_error = getattr(ElementTree, 'ParseError', None)
@@ -29,6 +27,9 @@ ZLIB_DECODE_AUTO = 32 + zlib.MAX_WBITS
 
 # Can be set to specify a custom user agent HTTP header on requests
 _user_agent = None
+
+# Can be set to an ApiCache instance that is used as default Cache
+_default_cache = None
 
 try:
     import requests
@@ -215,7 +216,7 @@ class API(object):
         if user_agent is not None:
             self.user_agent += ' %s' % user_agent
 
-        cache = cache or _defaultcache or APICache()
+        cache = cache or _default_cache or APICache()
         if not isinstance(cache, APICache):
             raise ValueError("The provided cache must subclass from APICache.")
         self.cache = cache

@@ -25,11 +25,15 @@ if _xml_error is None:
 # From zlib.h header file, not documented in Python.
 ZLIB_DECODE_AUTO = 32 + zlib.MAX_WBITS
 
-# Can be set to specify a custom user agent HTTP header on requests
+# Set by evelink/__init__.py to the evelink version. Use the user_agent
+# parameter when constructing an API object if you want to add additional
+# information to the user agent string. (Technically, you *can* override
+# this, but it's not the intended method.)
 _user_agent = None
 
-# Can be set to an ApiCache instance that is used as default Cache
-_default_cache = None
+# Can be set to an APICache instance that is used as a shared default
+# cache instance for all API instances. Note: instance, not class.
+default_cache = None
 
 try:
     import requests
@@ -216,7 +220,7 @@ class API(object):
         if user_agent is not None:
             self.user_agent += ' %s' % user_agent
 
-        cache = cache or _default_cache or APICache()
+        cache = cache or default_cache or APICache()
         if not isinstance(cache, APICache):
             raise ValueError("The provided cache must subclass from APICache.")
         self.cache = cache

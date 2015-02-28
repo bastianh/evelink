@@ -13,6 +13,8 @@ from evelink import server
 
 __version__ = "0.6.0p2"
 
+__version__ += "-daf"
+
 # Implement NullHandler because it was only added in Python 2.7+.
 class NullHandler(logging.Handler):
     def emit(self, record):

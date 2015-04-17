@@ -364,11 +364,11 @@ class API(object):
             if params:
                 # POST request
                 _log.debug("POSTing request")
-                r = session.post(full_path, data=params)
+                r = session.post(full_path, data=params, timeout=60)
             else:
                 # GET request
                 _log.debug("GETting request")
-                r = session.get(full_path)
+                r = session.get(full_path, timeout=60)
             _log.debug("Response status code: %s" % r.status_code)
             return r.content, r
         except requests.exceptions.RequestException as e:

@@ -32,6 +32,22 @@ class CharTestCase(APITestCase):
         self.assertEqual(current, 12345)
         self.assertEqual(expires, 67890)
 
+    @mock.patch('evelink.char.parse_bookmarks')
+    def test_bookmarks(self, mock_parse):
+        self.api.get.return_value = API_RESULT_SENTINEL
+        mock_parse.return_value = mock.sentinel.parsed_bookmarks
+
+        result, current, expires = self.char.bookmarks()
+        self.assertEqual(result, mock.sentinel.parsed_bookmarks)
+        self.assertEqual(mock_parse.mock_calls, [
+                mock.call(mock.sentinel.api_result),
+            ])
+        self.assertEqual(self.api.mock_calls, [
+                mock.call.get('char/Bookmarks', params={'characterID': 1}),
+            ])
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
+
     @mock.patch('evelink.char.parse_contract_bids')
     def test_contract_bids(self, mock_parse):
         self.api.get.return_value = API_RESULT_SENTINEL
@@ -282,12 +298,53 @@ class CharTestCase(APITestCase):
                 mock.call(mock.sentinel.api_result),
             ])
 
+    def test_planetary_routes_map(self):
+        routes = {
+            605707989: {'id': 605707989,
+                        'source_id': 1014990361652,
+                        'destination_id': 1014990361649,
+                        'content': {'type': 2310, 'name': 'Noble Gas'},
+                        'quantity': 3000,
+                        'path': (1014990361647, 1014990361650, 0, 0, 0),
+            },
+            605707990: {'id': 605707990,
+                        'source_id': 1014990361652,
+                        'destination_id': 1014990361647,
+                        'content': {'type': 2311, 'name': 'Reactive Gas'},
+                        'quantity': 3000,
+                        'path': (0, 0, 0, 0, 0),
+            },
+        }
+
+        self.assertEqual(self.char.planetary_route_map(routes), {
+            1014990361652: set([605707989, 605707990]),
+            1014990361647: set([605707990]),
+            1014990361649: set([605707989])}
+        )
+
     @mock.patch('evelink.char.parse_kills')
     def test_kills(self, mock_parse):
         self.api.get.return_value = API_RESULT_SENTINEL
         mock_parse.return_value = mock.sentinel.kills
 
         result, current, expires = self.char.kills()
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
+
+        self.assertEqual(result, mock.sentinel.kills)
+        self.assertEqual(self.api.mock_calls, [
+                mock.call.get('char/KillMails', params={'characterID': 1}),
+            ])
+        self.assertEqual(mock_parse.mock_calls, [
+                mock.call(mock.sentinel.api_result),
+            ])
+
+    @mock.patch('evelink.char.parse_kills')
+    def test_kill_log(self, mock_parse):
+        self.api.get.return_value = API_RESULT_SENTINEL
+        mock_parse.return_value = mock.sentinel.kills
+
+        result, current, expires = self.char.kill_log()
         self.assertEqual(current, 12345)
         self.assertEqual(expires, 67890)
 
@@ -304,7 +361,7 @@ class CharTestCase(APITestCase):
 
         self.char.kills(before_kill=12345)
         self.assertEqual(self.api.mock_calls, [
-                mock.call.get('char/KillLog', params={'characterID': 1, 'beforeKillID': 12345}),
+                mock.call.get('char/KillMails', params={'characterID': 1, 'beforeKillID': 12345}),
             ])
 
     def test_character_sheet(self):
@@ -345,13 +402,13 @@ class CharTestCase(APITestCase):
                 33527: 'High-grade Ascendancy Epsilon',
                 33528: 'High-grade Ascendancy Gamma',
             },
-            'skills': [
-                {'level': 3, 'published': True, 'skillpoints': 8000, 'id': 3431},
-                {'level': 3, 'published': True, 'skillpoints': 8000, 'id': 3413},
-                {'level': 1, 'published': True, 'skillpoints': 500, 'id': 21059},
-                {'level': 3, 'published': True, 'skillpoints': 8000, 'id': 3416},
-                {'level': 5, 'published': False, 'skillpoints': 512000, 'id': 3445}
-            ],
+            'skills': {
+                3431: {'level': 3, 'published': True, 'skillpoints': 8000, 'id': 3431},
+                3413: {'level': 3, 'published': True, 'skillpoints': 8000, 'id': 3413},
+                21059: {'level': 1, 'published': True, 'skillpoints': 500, 'id': 21059},
+                3416: {'level': 3, 'published': True, 'skillpoints': 8000, 'id': 3416},
+                3445: {'level': 5, 'published': False, 'skillpoints': 512000, 'id': 3445}
+            },
             'skillpoints': 536500,
             'roles': {
                 'global': {1 : {'id': 1, 'name': 'roleDirector'}},
@@ -896,6 +953,65 @@ class CharTestCase(APITestCase):
 
         self.assertEqual(current, 12345)
         self.assertEqual(expires, 67890)
+
+    def test_chat_channels(self):
+        self.api.get.return_value = self.make_api_result("char/chat_channels.xml")
+
+        result, current, expires = self.char.chat_channels()
+
+        self.assertEqual(self.api.mock_calls,
+            [mock.call.get('char/ChatChannels', params={'characterID': 1}),])
+
+        self.maxDiff = None
+        self.assertEqual(result, {
+                -69329950: {
+                    'id': -69329950,
+                    'owner': {
+                        'id': 95578451,
+                        'name': 'CCP Tellus',
+                    },
+                    'name': 'Players\' Haven',
+                    'comparison_name': 'players\'haven',
+                    'passworded': False,
+                    'motd': '<b>Feed pineapples to the cats!</b>',
+                    'allowed': {
+                        99005629: {
+                            'id': 99005629,
+                            'name': 'Tellus Alliance',
+                        },
+                    },
+                    'blocked': {
+                        98396389: {
+                            'id': 98396389,
+                            'name': 'Tellus Corporation',
+                            'until_ts': None,
+                            'reason': '',
+                        },
+                    },
+                    'muted': {
+                        90006031: {
+                            'id': 90006031,
+                            'name': 'CCP Nestor',
+                            'until_ts': 1438960660,
+                            'reason': 'Test success! You can\'t speak now.',
+                        },
+                    },
+                    'ops': {
+                        92168909: {
+                            'id': 92168909,
+                            'name': 'CCP FoxFour',
+                        },
+                        95465499: {
+                            'id': 95465499,
+                            'name': 'CCP Bartender',
+                        },
+                    },
+                },
+            })
+
+        self.assertEqual(current, 12345)
+        self.assertEqual(expires, 67890)
+
 
 if __name__ == "__main__":
     unittest.main()

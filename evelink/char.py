@@ -1,5 +1,8 @@
+import collections
+
 from evelink import api, constants
 from evelink.parsing.assets import parse_assets
+from evelink.parsing.bookmarks import parse_bookmarks
 from evelink.parsing.contact_list import parse_contact_list
 from evelink.parsing.contract_bids import parse_contract_bids
 from evelink.parsing.contract_items import parse_contract_items
@@ -64,6 +67,11 @@ class Char(object):
         """
 
         return api.APIResult(parse_assets(api_result.result), api_result.timestamp, api_result.expires)
+
+    @auto_call('char/Bookmarks')
+    def bookmarks(self, api_result=None):
+        """Retrieves this character's bookmarks."""
+        return api.APIResult(parse_bookmarks(api_result.result), api_result.timestamp, api_result.expires)
 
     @auto_call('char/ContractBids')
     def contract_bids(self, api_result=None):
@@ -137,9 +145,31 @@ class Char(object):
         """Get a list of PI routing entries for a character's planet."""
         return api.APIResult(parse_planetary_routes(api_result.result), api_result.timestamp, api_result.expires)
 
-    @auto_call('char/KillLog', map_params={'before_kill': 'beforeKillID'})
+    def planetary_route_map(self, routes, unused_ts=None, unused_exp=None):
+        """Given the result of planetary_routes, build a map planetid: [linkid1, linkid2, ...]"""
+        result = collections.defaultdict(set)
+        for route_id, route in routes.items():
+            result[route['source_id']].add(route_id)
+            result[route['destination_id']].add(route_id)
+
+        return dict(result)
+
+    @auto_call('char/KillMails', map_params={'before_kill': 'beforeKillID'})
     def kills(self, before_kill=None, api_result=None):
         """Look up recent kills for a character.
+
+        before_kill:
+            Optional. Only show kills before this kill id. (Used for paging.)
+        """
+
+        return api.APIResult(parse_kills(api_result.result), api_result.timestamp, api_result.expires)
+
+    @auto_call('char/KillLog', map_params={'before_kill': 'beforeKillID'})
+    def kill_log(self, before_kill=None, api_result=None):
+        """Look up recent kills for a character.
+
+        Note: this method uses the long cache version of the endpoint. If you
+              want to use the short cache version (recommended), use kills().
 
         before_kill:
             Optional. Only show kills before this kill id. (Used for paging.)
@@ -303,17 +333,18 @@ class Char(object):
             }
 
 
-        result['skills'] = []
+        result['skills'] = {}
         result['skillpoints'] = 0
         for skill in rowsets['skills']:
             a = skill.attrib
+            skill_id = int(a['typeID'])
             sp = int(a['skillpoints'])
-            result['skills'].append({
-                'id': int(a['typeID']),
+            result['skills'][skill_id] = {
+                'id': skill_id,
                 'skillpoints': sp,
                 'level': int(a['level']),
                 'published': a['published'] == '1',
-            })
+            }
             result['skillpoints'] += sp
 
         result['roles'] = {}
@@ -648,6 +679,71 @@ class Char(object):
                 'material_efficiency': int(row.attrib['materialEfficiency']),
                 'runs': int(row.attrib['runs']),
             }
+
+        return api.APIResult(results, api_result.timestamp, api_result.expires)
+
+    @auto_call('char/ChatChannels')
+    def chat_channels(self, api_result=None):
+        """Get a list of chat channels this character owns or ops."""
+        rowset = api_result.result.find('rowset')
+
+        results = {}
+        for row in rowset.findall('row'):
+            a = row.attrib
+            channel = {
+                'id': int(a['channelID']),
+                'owner': {
+                    'id': int(a['ownerID']),
+                    'name': a['ownerName'],
+                },
+                'name': a['displayName'],
+                'comparison_name': a['comparisonKey'],
+                'passworded': a['hasPassword'] == 'True',
+                'motd': a['motd'],
+                'allowed': {},
+                'blocked': {},
+                'muted': {},
+                'ops': {},
+            }
+
+            sections = {}
+            for section in row.findall('rowset'):
+                sections[section.attrib['name']] = section
+
+            if 'allowed' in sections:
+                for entity in sections['allowed'].findall('row'):
+                    entity_id = int(entity.attrib['accessorID'])
+                    channel['allowed'][entity_id] = {
+                        'id': entity_id,
+                        'name': entity.attrib['accessorName'],
+                    }
+            if 'blocked' in sections:
+                for entity in sections['blocked'].findall('row'):
+                    entity_id = int(entity.attrib['accessorID'])
+                    channel['blocked'][entity_id] = {
+                        'id': entity_id,
+                        'name': entity.attrib['accessorName'],
+                        'until_ts': api.parse_ts(entity.attrib['untilWhen']),
+                        'reason': entity.attrib['reason'],
+                    }
+            if 'muted' in sections:
+                for entity in sections['muted'].findall('row'):
+                    entity_id = int(entity.attrib['accessorID'])
+                    channel['muted'][entity_id] = {
+                        'id': entity_id,
+                        'name': entity.attrib['accessorName'],
+                        'until_ts': api.parse_ts(entity.attrib['untilWhen']),
+                        'reason': entity.attrib['reason'],
+                    }
+            if 'operators' in sections:
+                for entity in sections['operators'].findall('row'):
+                    entity_id = int(entity.attrib['accessorID'])
+                    channel['ops'][entity_id] = {
+                        'id': entity_id,
+                        'name': entity.attrib['accessorName'],
+                    }
+
+            results[channel['id']] = channel
 
         return api.APIResult(results, api_result.timestamp, api_result.expires)
 
